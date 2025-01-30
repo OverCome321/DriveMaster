@@ -1,6 +1,5 @@
 ﻿namespace DriverMasterModels
 {
-    // Change from a class to an enum
     public enum Command
     {
         // Команды, которые уже реализованы

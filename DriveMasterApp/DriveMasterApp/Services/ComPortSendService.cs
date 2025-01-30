@@ -10,7 +10,13 @@ namespace DriveMasterApp.Services
         public ComPortSendService(IComPortConnection comPortConnection) 
         {
             _port = comPortConnection;
-        } 
+        }
+        #region Methods
+        /// <summary>
+        /// Метод реализует SendMessage интерфейса IComPortConnection для отправки команды по com порту
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
         public async Task SendMessage(string message)
         {
             await Task.Run(() =>
@@ -23,5 +29,6 @@ namespace DriveMasterApp.Services
                 }
             });
         }
+        #endregion
     }
 }

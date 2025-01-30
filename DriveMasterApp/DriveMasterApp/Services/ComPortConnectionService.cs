@@ -10,6 +10,13 @@ namespace DriveMasterApp.Services
 
         public bool IsConnected => _serialPort != null && _serialPort.IsOpen;
 
+
+        #region Methods
+        /// <summary>
+        /// Метод реализует Connect интерфейса IComPortConnection для соединения с com портом
+        /// </summary>
+        /// <param name="portName"></param>
+        /// <returns></returns>
         public async Task Connect(string portName)
         {
             await Task.Run(async () =>
@@ -44,6 +51,10 @@ namespace DriveMasterApp.Services
                 }
             });
         }
+        /// <summary>
+        /// Метод реализует Disconnect интерфейса IComPortConnection для отсоединения от com порта
+        /// </summary>
+        /// <returns></returns>
         public async Task Disconnect()
         {
             await Task.Run(async () =>
@@ -62,6 +73,11 @@ namespace DriveMasterApp.Services
                 }
             });
         }
+        /// <summary>
+        /// Метод реализует GetPort интерфейса IComPortConnection для получения информации по текущему порту
+        /// </summary>
+        /// <returns></returns>
         public SerialPort GetPort() => _serialPort;
+        #endregion
     }
 }

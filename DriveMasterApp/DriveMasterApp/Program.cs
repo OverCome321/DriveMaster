@@ -21,7 +21,10 @@ namespace DriveMasterApp
             var mainForm = serviceProvider.GetRequiredService<Form1>();
             Application.Run(mainForm);
         }
-
+        /// <summary>
+        /// Конфигурация сервисов для DI
+        /// </summary>
+        /// <param name="services"></param>
         private static void ConfigureServices(ServiceCollection services)
         {
             services.AddSingleton<IComPortConnection, ComPortConnectionService>();

@@ -6,14 +6,17 @@ using System.IO.Ports;
 using OxyPlot.WindowsForms;
 using System.Collections.Concurrent;
 using Timer = System.Windows.Forms.Timer;
-using DriveMasterApp.Services;
-using DriverMasterModels;
 using DriveMasterApp.Utils;
+using OxyPlot.Legends;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace DriveMasterApp
 {
     public partial class PlotForm : Form
     {
+        #region Fields
         private readonly IComPortConnection _comPortConnectionService;
         private readonly IComPortSend _comPortSendService;
         private readonly ConcurrentBag<(double elapsedTime, double value)> dataBag = new ConcurrentBag<(double, double)>();
@@ -21,8 +24,10 @@ namespace DriveMasterApp
         private Timer timer;
         private double elapsedTime;
         private Label timerLabel;
-        private FlowLayoutPanel legendPanel;
-
+        private PlotView plotView;
+        private PlotModel plotModel;
+        private List<LineSeries> lineSeriesList;
+        #endregion
         public PlotForm(IComPortConnection comPortConnectionService, IComPortSend comPortSendService)
         {
             _comPortSendService = comPortSendService;
@@ -34,12 +39,14 @@ namespace DriveMasterApp
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormClosing += Form1_FormClosing;
         }
-
+        #region Init
+        /// <summary>
+        /// Метод инициализирует объекты и отображения их на форме
+        /// </summary>
         private void InitializeComponent()
         {
             plotView = new OxyPlot.WindowsForms.PlotView();
             timerLabel = new Label();
-            legendPanel = new FlowLayoutPanel();
             SuspendLayout();
 
             plotView.Dock = DockStyle.Fill;
@@ -52,48 +59,33 @@ namespace DriveMasterApp
             timerLabel.Location = new System.Drawing.Point(10, 10);
             timerLabel.Font = new Font("Arial", 10, FontStyle.Regular);
 
-            legendPanel.FlowDirection = FlowDirection.TopDown;
-            legendPanel.AutoSize = true;
-            legendPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            legendPanel.Location = new System.Drawing.Point(750, 78);
-            legendPanel.Width = 3;
-            legendPanel.BackColor = Color.Transparent;
-
-
             Controls.Add(plotView);
             Controls.Add(timerLabel);
-            Controls.Add(legendPanel);
-            Text = "График диагностики";
             ClientSize = new System.Drawing.Size(800, 600);
             timerLabel.BringToFront();
-            legendPanel.BringToFront();
             ResumeLayout(false);
             PerformLayout();
         }
-        private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            if (_comPortConnectionService.IsConnected)
-            {
-                var formattedString = CommandsFormatting.GetCommandWithFormatting("Exit");
-                await _comPortSendService.SendMessage(formattedString);
-            }
-            timer?.Stop();
-            timer = null;
-            _comPortConnectionService.GetPort().DataReceived -= DataReceivedHandler;
-        }
-
-        private PlotView plotView;
-        private PlotModel plotModel;
-        private List<LineSeries> lineSeriesList;
-
+        /// <summary>
+        /// Метод инициализирует график на экране
+        /// </summary>
         private void InitializeChart()
         {
-            // Сначала сбрасываем старые данные
             plotModel = new PlotModel
             {
-                Title = "График диагностики",
-                IsLegendVisible = false
+                Title = "График диагностики"
             };
+
+            // Создаем и настраиваем легенду
+            var legend = new Legend
+            {
+                LegendPosition = LegendPosition.RightTop,
+                LegendPlacement = LegendPlacement.Outside,
+                LegendOrientation = LegendOrientation.Vertical,
+                LegendBorder = OxyColors.Black,
+                LegendBackground = OxyColor.FromArgb(200, 255, 255, 255)
+            };
+            plotModel.Legends.Add(legend);
 
             plotModel.Axes.Clear(); // Убедитесь, что оси очищены
             plotModel.Axes.Add(new LinearAxis
@@ -113,26 +105,10 @@ namespace DriveMasterApp
             // Инициализируем список линейных серий
             lineSeriesList = new List<LineSeries>();
             plotView.Model = plotModel;
-
-            // Добавляем легенду
-            AddLegend();
         }
-
-        private void AddLegend()
-        {
-            string[] labels = { "Value1", "Value2", "Value3", "Value4", "Value5" };
-            for (int i = 0; i < labels.Length; i++)
-            {
-                Panel legendItem = new Panel { Width = 80, Height = 20, Padding = new Padding(7), Margin = new Padding(2), BackColor = Color.Transparent };
-                PictureBox colorBox = new PictureBox { Width = 15, Height = 15, BackColor = Color.FromArgb(GetLineColor(i).R, GetLineColor(i).G, GetLineColor(i).B), Margin = new Padding(0, 3, 5, 3) };
-                Label legendLabel = new Label { Text = labels[i], AutoSize = true, Font = new Font("Arial", 10, FontStyle.Bold), ForeColor = Color.Black, Location = new System.Drawing.Point(25, 0) };
-
-                legendItem.Controls.Add(colorBox);
-                legendItem.Controls.Add(legendLabel);
-                legendPanel.Controls.Add(legendItem);
-            }
-        }
-
+        /// <summary>
+        /// Метод инициализирует процесс получения данных при открытии окна
+        /// </summary>
         public void StartReceivingData()
         {
             _comPortConnectionService.GetPort().DataReceived += DataReceivedHandler;
@@ -144,42 +120,73 @@ namespace DriveMasterApp
             startTime = DateTime.Now;
             UpdateTimerLabel();
         }
-
-        private void TimerTick(object sender, EventArgs e)
-        {
-            elapsedTime = Math.Round((DateTime.Now - startTime).TotalSeconds);
-            UpdateTimerLabel();
-        }
-
-        private void UpdateTimerLabel()
-        {
-            timerLabel.Text = $"Старт: {startTime:HH:mm:ss} | Прошло: {elapsedTime} сек.";
-        }
-
+        #endregion
+        #region Event
+        /// <summary>
+        /// Событие привязанное к получению ответа от com порт, при получении ответа он парсится и отображается на графике
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void DataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
         {
             try
             {
                 string incomingData = _comPortConnectionService.GetPort().ReadExisting();
-                string[] values = incomingData.Split(',');
+
+                // Разделяем строку по пробелам и запятым, а затем удаляем лишние пробелы
+                string[] values = Regex.Split(incomingData, @"[ ,]+");
 
                 double timeElapsed = (DateTime.Now - startTime).TotalSeconds;
 
                 for (int i = 0; i < values.Length; i++)
                 {
-                    if (double.TryParse(values[i], out double value))
+                    // Пробуем распарсить каждое значение как число с плавающей точкой
+                    if (double.TryParse(values[i], NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
                     {
+                        // Добавляем значение в dataBag (если нужно)
                         dataBag.Add((timeElapsed, value));
+
+                        // Обновляем график (если нужно)
                         UpdateChart(i, timeElapsed, value);
+                    }
+                    else
+                    {
+                        // Если значение не удалось распарсить, выводим сообщение в отладочную консоль
+                        Debug.WriteLine($"Ошибка парсинга: {values[i]}");
                     }
                 }
             }
             catch (Exception ex)
             {
+                // Обрабатываем исключения и показываем сообщение об ошибке
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка получения данных", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
+        /// <summary>
+        /// Событие привязанное к тику времени, увеличивает время на экране на +1 секунду
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void TimerTick(object sender, EventArgs e)
+        {
+            elapsedTime = Math.Round((DateTime.Now - startTime).TotalSeconds);
+            UpdateTimerLabel();
+        }
+        #endregion
+        #region Methods
+        /// <summary>
+        /// Метод для обновления времени на экране
+        /// </summary>
+        private void UpdateTimerLabel()
+        {
+            timerLabel.Text = $"Старт: {startTime:HH:mm:ss} | Прошло: {elapsedTime} сек.";
+        }
+        /// <summary>
+        /// Метод обновляет информацию о значения на графике в момент получения данных от com порта 
+        /// </summary>
+        /// <param name="lineIndex"></param>
+        /// <param name="elapsedTime"></param>
+        /// <param name="value"></param>
         private void UpdateChart(int lineIndex, double elapsedTime, double value)
         {
             if (lineSeriesList.Count <= lineIndex)
@@ -197,7 +204,11 @@ namespace DriveMasterApp
             lineSeriesList[lineIndex].Points.Add(new DataPoint(elapsedTime, value));
             plotView.InvalidatePlot(true);
         }
-
+        /// <summary>
+        /// Метод для получения цвета линий отобрадающихся на графике
+        /// </summary>
+        /// <param name="lineIndex"></param>
+        /// <returns></returns>
         private OxyColor GetLineColor(int lineIndex)
         {
             OxyColor[] colors = new OxyColor[]
@@ -210,5 +221,24 @@ namespace DriveMasterApp
             };
             return colors[lineIndex % colors.Length];
         }
+        #endregion
+        #region FormClosingEvent
+        /// <summary>
+        /// Метод отправляет команду Exit в момент закрытия формы
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (_comPortConnectionService.IsConnected)
+            {
+                var formattedString = CommandsFormatting.GetCommandWithFormatting("Exit");
+                await _comPortSendService.SendMessage(formattedString);
+            }
+            timer?.Stop();
+            timer = null;
+            _comPortConnectionService.GetPort().DataReceived -= DataReceivedHandler;
+        }
+        #endregion
     }
 }
