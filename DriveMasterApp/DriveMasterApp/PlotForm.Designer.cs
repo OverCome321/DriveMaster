@@ -232,13 +232,50 @@ namespace DriveMasterApp
         {
             if (_comPortConnectionService.IsConnected)
             {
+                var port = _comPortConnectionService.GetPort();
+                port.DataReceived -= DataReceivedHandler;
+                port.DataReceived += DataReceivedHandlerForExit;
+
                 var formattedString = CommandsFormatting.GetCommandWithFormatting("Exit");
                 await _comPortSendService.SendMessage(formattedString);
+
+                // Ожидание ответа
+                await WaitForResponseAsync();
+
+                // Отправляем подтверждение "Y"
+                await _comPortSendService.SendMessage("Y");
+
+                // Отписываемся от обработчика после завершения
+                port.DataReceived -= DataReceivedHandlerForExit;
             }
             timer?.Stop();
             timer = null;
-            _comPortConnectionService.GetPort().DataReceived -= DataReceivedHandler;
         }
+
+        /// <summary>
+        /// Ожидание ответа от устройства
+        /// </summary>
+        private TaskCompletionSource<bool> _responseReceived = new TaskCompletionSource<bool>();
+
+        private async Task WaitForResponseAsync()
+        {
+            await _responseReceived.Task;
+        }
+
+        /// <summary>
+        /// Обработчик данных для Exit
+        /// </summary>
+        private void DataReceivedHandlerForExit(object sender, SerialDataReceivedEventArgs e)
+        {
+            var port = (SerialPort)sender;
+            string response = port.ReadExisting();
+
+            if (!string.IsNullOrEmpty(response))
+            {
+                _responseReceived.TrySetResult(true);
+            }
+        }
+
         #endregion
     }
 }

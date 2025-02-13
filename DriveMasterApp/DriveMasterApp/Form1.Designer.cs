@@ -311,22 +311,51 @@ namespace DriveMasterApp
             if (_comPortConnectionService.IsConnected)
             {
                 Command dmCommand = Command.DM;
-
                 labelCommandStatus.Text = $"Статус команды: {dmCommand} отправляется...";
                 await AnimateLabelAsync(Color.LightYellow, Color.Yellow, 300);
 
+                var port = _comPortConnectionService.GetPort();
+                port.DataReceived += DataReceivedHandler;
+
                 var formattedString = CommandsFormatting.GetCommandWithFormatting("DM");
                 await _comPortSendService.SendMessage(formattedString);
+                labelCommandStatus.Text = $"Статус команды: {dmCommand} отправлена";
 
-                var plotForm = _serviceProvider.GetRequiredService<PlotForm>();
-                plotForm.Show();
-
-                labelCommandStatus.Text = $"Статус команды: {dmCommand} доставлена";
-                await AnimateLabelAsync(Color.Yellow, Color.LightGray, 300);
+                // Ожидание ответа
+                await WaitForResponseAsync();
             }
             else
             {
                 MessageBox.Show("COM порт не подключен.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private TaskCompletionSource<bool> _responseReceived = new TaskCompletionSource<bool>();
+
+        private async Task WaitForResponseAsync()
+        {
+            labelCommandStatus.Text = $"Получаем ответ от COM port... Ожидается ответ и отправка команды Y";
+            await _responseReceived.Task;
+
+            // Отправляем подтверждение "Y"
+            await _comPortSendService.SendMessage("Y");
+
+            // Показываем окно после получения ответа
+            var plotForm = _serviceProvider.GetRequiredService<PlotForm>();
+            plotForm.Show();
+
+            labelCommandStatus.Text = "Команда выполнена успешно";
+            await AnimateLabelAsync(Color.Yellow, Color.LightGray, 300);
+        }
+
+        private void DataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
+        {
+            var port = (SerialPort)sender;
+            string response = port.ReadExisting();
+
+            if (!string.IsNullOrEmpty(response))
+            {
+                _responseReceived.TrySetResult(true);
             }
         }
         /// <summary>
