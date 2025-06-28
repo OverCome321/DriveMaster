@@ -33,8 +33,7 @@ namespace DriveMasterApp.Services
                             Parity = Parity.None,
                             DataBits = 8,
                             StopBits = StopBits.One,
-                            Handshake = Handshake.None,
-                            Encoding = Encoding.UTF8
+                            Handshake = Handshake.None
                         };
                         _serialPort.Open();
                     }

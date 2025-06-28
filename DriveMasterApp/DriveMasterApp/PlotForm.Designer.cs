@@ -27,6 +27,10 @@ namespace DriveMasterApp
         private PlotView plotView;
         private PlotModel plotModel;
         private List<LineSeries> lineSeriesList;
+        private long _countLines = 1;
+        private Thread threadRead;
+        private bool _isCanThreadStop = false;
+        private bool isThreadStop = false;
         #endregion
         public PlotForm(IComPortConnection comPortConnectionService, IComPortSend comPortSendService)
         {
@@ -111,7 +115,6 @@ namespace DriveMasterApp
         /// </summary>
         public void StartReceivingData()
         {
-            _comPortConnectionService.GetPort().DataReceived += DataReceivedHandler;
             elapsedTime = 0;
             timer = new Timer();
             timer.Interval = 1000;
@@ -119,6 +122,8 @@ namespace DriveMasterApp
             timer.Start();
             startTime = DateTime.Now;
             UpdateTimerLabel();
+            threadRead = new Thread(new ThreadStart(CheckPort));
+            threadRead.Start();
         }
         #endregion
         #region Event
@@ -127,39 +132,64 @@ namespace DriveMasterApp
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void DataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
+        private void CheckPort()
         {
             try
             {
                 string incomingData = _comPortConnectionService.GetPort().ReadExisting();
+                if (incomingData == "") return;
+                Debug.WriteLine(incomingData);
 
                 // Разделяем строку по пробелам и запятым, а затем удаляем лишние пробелы
-                string[] values = Regex.Split(incomingData, @"[ ,]+");
+                string[] lines = incomingData.Split("\r");
 
-                double timeElapsed = (DateTime.Now - startTime).TotalSeconds;
-
-                for (int i = 0; i < values.Length; i++)
+                for(int i = 0; i < lines.Length-1; i++)
                 {
-                    // Пробуем распарсить каждое значение как число с плавающей точкой
-                    if (double.TryParse(values[i], NumberStyles.Any, CultureInfo.InvariantCulture, out double value))
-                    {
-                        // Добавляем значение в dataBag (если нужно)
-                        dataBag.Add((timeElapsed, value));
+                    _countLines++;
+                    Debug.WriteLine("Количество интераций = " + _countLines.ToString());
+                    string[] values = lines[i].Split(' ');
 
-                        // Обновляем график (если нужно)
-                        UpdateChart(i, timeElapsed, value);
-                    }
-                    else
+                    if (values.Length != 7) continue;
+
+                    for (int j = 0; j < values.Length; j++)
                     {
-                        // Если значение не удалось распарсить, выводим сообщение в отладочную консоль
-                        Debug.WriteLine($"Ошибка парсинга: {values[i]}");
+                        // Пробуем распарсить каждое значение как число с плавающей точкой
+                        if (int.TryParse(values[j], NumberStyles.Any, CultureInfo.InvariantCulture, out int value))
+                        {
+                            // Добавляем значение в dataBag (если нужно)
+                            //dataBag.Add((_countLines, value));
+
+                            // Обновляем график (если нужно)
+                            UpdateChart(j, _countLines, value > 3000 ? 3000: value);
+                        }
+                        else
+                        {
+                            // Если значение не удалось распарсить, выводим сообщение в отладочную консоль
+                            Debug.WriteLine($"Ошибка парсинга: {values[j]}");
+                        }
                     }
                 }
+
+
+                //double timeElapsed = (DateTime.Now - startTime).TotalSeconds;
+
+
             }
             catch (Exception ex)
             {
                 // Обрабатываем исключения и показываем сообщение об ошибке
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка получения данных", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                //this.Invoke(() =>
+                //{
+                //    if (isThreadStop)
+                //        _isCanThreadStop = true;
+
+                //});
+                //if (!_isCanThreadStop)
+                    CheckPort();
             }
         }
         /// <summary>
@@ -187,22 +217,45 @@ namespace DriveMasterApp
         /// <param name="lineIndex"></param>
         /// <param name="elapsedTime"></param>
         /// <param name="value"></param>
-        private void UpdateChart(int lineIndex, double elapsedTime, double value)
+        private void UpdateChart(int lineIndex, long elapsedTime, int value)
         {
-            if (lineSeriesList.Count <= lineIndex)
+            try
             {
-                var newLineSeries = new LineSeries
+                this.Invoke(() =>
                 {
-                    Title = $"Value {lineIndex + 1}",
-                    MarkerType = MarkerType.Circle,
-                    Color = GetLineColor(lineIndex)
-                };
-                lineSeriesList.Add(newLineSeries);
-                plotModel.Series.Add(newLineSeries);
+                    if (lineSeriesList.Count <= lineIndex)
+                    {
+                        var newLineSeries = new LineSeries
+                        {
+                            Title = $"Value {lineIndex + 1}",
+                            MarkerType = MarkerType.Circle,
+                            Color = GetLineColor(lineIndex),
+
+                        };
+                        //newLineSeries.Points.Add(new DataPoint(elapsedTime, value));
+                        lineSeriesList.Add(newLineSeries);
+                        plotModel.Series.Add(newLineSeries);
+                    }
+
+                    lineSeriesList[lineIndex].Points.Add(new DataPoint(elapsedTime, value));
+                    plotView.InvalidatePlot(true);
+                });
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show("Отрисовка графика = " + ex.Message);
+            }
+            finally
+            {
+                this.Invoke(() =>
+                {
+                    if (isThreadStop)
+                        _isCanThreadStop = true;
+
+                });
             }
 
-            lineSeriesList[lineIndex].Points.Add(new DataPoint(elapsedTime, value));
-            plotView.InvalidatePlot(true);
+
         }
         /// <summary>
         /// Метод для получения цвета линий отобрадающихся на графике
@@ -217,7 +270,9 @@ namespace DriveMasterApp
                 OxyColor.FromRgb(0, 255, 0),  // Green
                 OxyColor.FromRgb(0, 0, 255),  // Blue
                 OxyColor.FromRgb(255, 165, 0), // Orange
-                OxyColor.FromRgb(255, 255, 0)  // Yellow
+                OxyColor.FromRgb(255, 255, 0),  // Yellow
+                OxyColor.FromRgb(255,255,255), // Black
+                OxyColor.FromRgb(125,125,125) //Gray
             };
             return colors[lineIndex % colors.Length];
         }
@@ -233,7 +288,10 @@ namespace DriveMasterApp
             if (_comPortConnectionService.IsConnected)
             {
                 var port = _comPortConnectionService.GetPort();
-                port.DataReceived -= DataReceivedHandler;
+
+                //port.DataReceived -= DataReceivedHandler;
+                isThreadStop = true;
+                threadRead.Join();
                 port.DataReceived += DataReceivedHandlerForExit;
 
                 var formattedString = CommandsFormatting.GetCommandWithFormatting("Exit");

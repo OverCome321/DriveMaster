@@ -9,7 +9,7 @@
         /// <returns></returns>
         public static string GetCommandWithFormatting(string command)
         {
-            return $"/{command}\r";
+            return $"/" + command + "\r";
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using DriveMasterApp.Interfaces;
 using DriveMasterApp.Utils;
+using System.Diagnostics;
 
 namespace DriveMasterApp.Services
 {
@@ -25,7 +26,8 @@ namespace DriveMasterApp.Services
                 if (serialPort != null && serialPort.IsOpen)
                 {
                     var formattedMessage = CommandsFormatting.GetCommandWithFormatting(message);
-                    serialPort.Write(formattedMessage);
+                    serialPort.Write(message);
+                    Debug.Write(message);
                 }
             });
         }

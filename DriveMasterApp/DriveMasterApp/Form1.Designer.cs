@@ -315,14 +315,16 @@ namespace DriveMasterApp
                 await AnimateLabelAsync(Color.LightYellow, Color.Yellow, 300);
 
                 var port = _comPortConnectionService.GetPort();
-                port.DataReceived += DataReceivedHandler;
+                //port.DataReceived += DataReceivedHandler;
 
                 var formattedString = CommandsFormatting.GetCommandWithFormatting("DM");
                 await _comPortSendService.SendMessage(formattedString);
                 labelCommandStatus.Text = $"Статус команды: {dmCommand} отправлена";
 
                 // Ожидание ответа
-                await WaitForResponseAsync();
+                //await WaitForResponseAsync();
+                var plotForm = _serviceProvider.GetRequiredService<PlotForm>();
+                plotForm.Show();
             }
             else
             {
